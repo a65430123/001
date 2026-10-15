@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1f6feb">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>抄表系統</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon.svg">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <button id="backBtn" class="icon-btn" hidden aria-label="返回">‹</button>
+    <h1 id="title">抄表系統</h1>
+    <span id="syncBadge" class="badge" hidden></span>
+  </header>
+
+  <main id="view"></main>
+
+  <nav class="tabbar" id="tabbar">
+    <button data-tab="home" class="active"><span>📍</span>抄表</button>
+    <button data-tab="history"><span>📋</span>紀錄</button>
+    <button data-tab="settings"><span>⚙️</span>設定</button>
+  </nav>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <!-- 相機畫面 -->
+  <template id="tpl-camera">
+    <section class="camera">
+      <video id="video" playsinline autoplay muted></video>
+      <div class="guide-wrap">
+        <div class="guide" id="guide"><span>請將數字對準框內</span></div>
+      </div>
+      <div class="cam-top">
+        <div class="cam-loc" id="camLoc"></div>
+        <button class="icon-btn light" id="torchBtn" hidden aria-label="手電筒">🔦</button>
+      </div>
+      <div class="cam-controls">
+        <label class="btn ghost light small">
+          📁 選照片
+          <input type="file" accept="image/*" id="fileInput" hidden>
+        </label>
+        <button class="shutter" id="shutterBtn" aria-label="拍照"></button>
+        <button class="btn ghost light small" id="manualBtn">✏️ 手動輸入</button>
+      </div>
+      <div class="cam-busy" id="camBusy" hidden>
+        <div class="spinner"></div>
+        <p id="busyText">辨識中…</p>
+      </div>
+    </section>
+  </template>
+
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
