@@ -168,6 +168,8 @@ table.hist th, table.hist td { padding: 8px 4px; border-bottom: 1px solid var(--
 table.hist td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
 .dot.pending { background: #e3a008; }
+.dot.error { background: var(--danger); }
+.dot.skip { background: var(--muted); }
 
 .toast {
   position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom)); transform: translateX(-50%);

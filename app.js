@@ -12,7 +12,7 @@
   const state = {
     locations: load(KEYS.locations, []),
     readings: load(KEYS.readings, []),
-    settings: Object.assign({ scriptUrl: '', secret: '', reader: '', uploadPhoto: false }, load(KEYS.settings, {})),
+    settings: Object.assign({ scriptUrl: '', secret: '', sheetUrl: '', reader: '', uploadPhoto: false }, load(KEYS.settings, {})),
   };
   const persist = () => {
     save(KEYS.locations, state.locations);
@@ -45,6 +45,17 @@
   const thisMonth = (iso) => {
     const d = new Date(iso), n = new Date();
     return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth();
+  };
+  const localDate = (d = new Date()) => {
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  };
+  // 每日抄表看「今天」有沒有抄；其他看「本月」
+  const isDone = (l) => {
+    const today = localDate();
+    return l.daily
+      ? readingsOf(l.id).some((r) => (r.date || localDate(new Date(r.time))) === today)
+      : !!(lastReading(l.id) && thisMonth(lastReading(l.id).time));
   };
   const avgUsage = (locId) => {
     const u = readingsOf(locId).slice(0, 6).map((r) => r.usage).filter((x) => typeof x === 'number' && x >= 0);
@@ -82,27 +93,30 @@
     home() {
       setHeader('抄表系統', false); setTab('home');
       const locs = state.locations;
-      const doneCount = locs.filter((l) => { const r = lastReading(l.id); return r && thisMonth(r.time); }).length;
+      const doneCount = locs.filter(isDone).length;
+      const allDaily = locs.length && locs.every((l) => l.daily);
       view.innerHTML = `
         <div class="card row">
-          <div><div class="muted">本月進度</div><div style="font-size:22px;font-weight:700">${doneCount} / ${locs.length}</div></div>
+          <div><div class="muted">${allDaily ? '今日進度' : '本月進度'}</div><div style="font-size:22px;font-weight:700">${doneCount} / ${locs.length}</div></div>
           <button class="btn small" id="addLoc">＋ 新增地點</button>
         </div>
-        ${locs.length ? '' : '<div class="empty">尚未建立抄表地點<br>請點「新增地點」開始</div>'}
+        ${locs.length ? '' : `<div class="empty">尚未建立抄表地點<br>請點「新增地點」開始<br><br>
+          <button class="btn small secondary" id="loadPreset">載入工務處抄表點（${PRESETS.length} 個）</button></div>`}
         ${locs.map((l) => {
           const r = lastReading(l.id);
-          const done = r && thisMonth(r.time);
+          const done = isDone(l);
           return `<div class="card loc-item" data-id="${l.id}">
             <div class="info">
               <div class="name">${esc(l.name)}</div>
-              <div class="meta">${esc([l.type, l.meterNo && '表號 ' + l.meterNo].filter(Boolean).join('・'))}</div>
+              <div class="meta">${esc([l.type, l.meterNo && '表號 ' + l.meterNo, l.sheet && l.sheet !== l.name && '→ ' + l.sheet].filter(Boolean).join('・'))}</div>
               <div class="meta">${r ? `上次 ${esc(r.value)} ${esc(l.unit || '')}（${fmtTime(r.time)}）` : '尚無紀錄'}</div>
             </div>
-            ${done ? '<span class="done">✓ 本月已抄</span>' : '<span class="todo">未抄 ›</span>'}
+            ${done ? `<span class="done">✓ ${l.daily ? '今日' : '本月'}已抄</span>` : '<span class="todo">未抄 ›</span>'}
           </div>`;
         }).join('')}
         ${locs.length ? '<p class="muted" style="text-align:center">點地點開始拍照抄表；長按可編輯</p>' : ''}`;
       $('#addLoc').onclick = () => go('editLocation');
+      if ($('#loadPreset')) $('#loadPreset').onclick = () => { loadPresets(); go('home', null, false); };
       view.querySelectorAll('.loc-item').forEach((el) => {
         let timer, long = false;
         const start = () => { long = false; timer = setTimeout(() => { long = true; go('editLocation', el.dataset.id); }, 600); };
@@ -116,36 +130,63 @@
     },
 
     editLocation(id) {
-      const loc = state.locations.find((l) => l.id === id) || { type: '電錶', unit: '度', decimals: 0 };
+      const loc = state.locations.find((l) => l.id === id) || { type: '電錶', unit: '度', decimals: 0, counter: true };
       setHeader(id ? '編輯地點' : '新增地點', true); setTab('home');
+      const col = (k, label, ph) => `<label class="field">${label}<input id="f_${k}" value="${esc(loc[k])}" placeholder="${ph}" autocapitalize="characters"></label>`;
       view.innerHTML = `
         <div class="card">
           <label class="field">地點名稱 *<input id="f_name" value="${esc(loc.name)}" placeholder="例如：A棟 3F 301室"></label>
           <label class="field">表別
-            <select id="f_type">${['電錶', '水錶', '瓦斯錶', '其他'].map((t) => `<option ${t === loc.type ? 'selected' : ''}>${t}</option>`).join('')}</select>
+            <select id="f_type">${['電錶', '水錶', '瓦斯錶', '油量', '其他'].map((t) => `<option ${t === loc.type ? 'selected' : ''}>${t}</option>`).join('')}</select>
           </label>
           <label class="field">表號<input id="f_meterNo" value="${esc(loc.meterNo)}" placeholder="選填"></label>
           <div class="row">
             <label class="field">單位<input id="f_unit" value="${esc(loc.unit)}" placeholder="度 / m³"></label>
             <label class="field">小數位數<input id="f_decimals" type="number" min="0" max="4" value="${loc.decimals ?? 0}"></label>
           </div>
+          <label class="check"><input type="checkbox" id="f_counter" ${loc.counter !== false ? 'checked' : ''}> 累計型讀數（計算用量、讀數倒退時提醒）</label>
+          <label class="check"><input type="checkbox" id="f_daily" ${loc.daily ? 'checked' : ''}> 每日抄表（首頁顯示「今日」進度）</label>
           <label class="field">起始讀數（選填，作為第一次的上期讀數）<input id="f_initial" inputmode="decimal" value="${esc(loc.initial)}"></label>
           <label class="field">備註<textarea id="f_note" rows="2">${esc(loc.note)}</textarea></label>
-          <button class="btn" id="saveLoc">儲存</button>
-          ${id ? '<div class="spacer"></div><button class="btn danger" id="delLoc">刪除此地點</button>' : ''}
         </div>
+        <div class="card">
+          <h2>寫入既有工作表（選填）</h2>
+          <p class="muted">填寫後，讀數會依日期寫進該工作表對應的那一列；留空則只記錄到「抄表紀錄」工作表。</p>
+          <label class="field">工作表名稱<input id="f_sheet" value="${esc(loc.sheet)}" placeholder="例如：R1F軟水-1"></label>
+          <div class="row">
+            ${col('dateCol', '日期欄', 'A')}
+            ${col('valueCol', '讀數欄', 'C')}
+          </div>
+          <div class="row">
+            ${col('signCol', '簽名欄', 'D')}
+            ${col('noteCol', '備註欄', 'E')}
+          </div>
+          <label class="field">列位移（同一天有多列時，例如中班＝1）<input id="f_rowOffset" type="number" min="0" max="20" value="${loc.rowOffset ?? 0}"></label>
+        </div>
+        <button class="btn" id="saveLoc">儲存</button>
+        ${id ? '<div class="spacer"></div><button class="btn danger" id="delLoc">刪除此地點</button>' : ''}
         <p class="muted">「小數位數」：若錶面最後幾位是小數（常見紅色字輪），辨識到的數字沒有小數點時會自動補上。</p>`;
       $('#saveLoc').onclick = () => {
         const name = $('#f_name').value.trim();
         if (!name) return toast('請輸入地點名稱');
         const initial = $('#f_initial').value.trim();
         if (initial && isNaN(Number(initial))) return toast('起始讀數必須是數字');
+        const colVal = (k) => $('#f_' + k).value.trim().toUpperCase();
+        for (const k of ['dateCol', 'valueCol', 'signCol', 'noteCol']) {
+          if (colVal(k) && !/^[A-Z]{1,2}$/.test(colVal(k))) return toast('欄位請填英文字母，例如 C');
+        }
+        const sheet = $('#f_sheet').value.trim();
+        if (sheet && !colVal('valueCol')) return toast('請填寫讀數欄');
         const data = {
           id: loc.id || uid(), name,
           type: $('#f_type').value, meterNo: $('#f_meterNo').value.trim(),
           unit: $('#f_unit').value.trim(),
           decimals: Math.max(0, Math.min(4, parseInt($('#f_decimals').value, 10) || 0)),
+          counter: $('#f_counter').checked, daily: $('#f_daily').checked,
           initial, note: $('#f_note').value.trim(),
+          sheet, dateCol: colVal('dateCol') || 'A', valueCol: colVal('valueCol'),
+          signCol: colVal('signCol'), noteCol: colVal('noteCol'),
+          rowOffset: Math.max(0, parseInt($('#f_rowOffset').value, 10) || 0),
         };
         const i = state.locations.findIndex((l) => l.id === data.id);
         if (i >= 0) state.locations[i] = data; else state.locations.push(data);
@@ -213,7 +254,10 @@
     confirm({ locId, crop, ocr }) {
       const loc = state.locations.find((l) => l.id === locId);
       const last = lastReading(locId);
-      const prev = last ? Number(last.value) : (loc.initial !== '' && loc.initial != null ? Number(loc.initial) : null);
+      let prev = last ? Number(last.value) : (loc.initial !== '' && loc.initial != null ? Number(loc.initial) : null);
+      let prevLabel = '上期讀數';
+      let existing = null;
+      const counter = loc.counter !== false;
       const avg = avgUsage(locId);
       setHeader('確認讀數', true);
       view.innerHTML = `
@@ -225,10 +269,12 @@
             <input id="val" class="reading-input" inputmode="decimal" autocomplete="off" value="${esc(ocr?.value ?? '')}" placeholder="請輸入">
           </label>
           ${ocr ? `<div class="conf">${ocr.error ? `自動辨識無法使用（${esc(ocr.error)}），請手動輸入` : ocr.value ? `自動辨識結果（信心 ${Math.round(ocr.confidence)}%）・原文：${esc(ocr.raw || '—')}` : '未能辨識出數字，請手動輸入'}</div>` : ''}
-          <div class="stats">
-            <div class="stat"><div class="k">上期讀數</div><div class="v">${prev ?? '—'}</div></div>
+          ${counter ? `<div class="stats">
+            <div class="stat"><div class="k" id="prevK">上期讀數</div><div class="v" id="prevV">—</div></div>
             <div class="stat"><div class="k">本期用量</div><div class="v" id="usage">—</div></div>
-          </div>
+          </div>` : ''}
+          ${loc.sheet ? `<label class="field">抄表日期<input id="date" type="date" value="${localDate()}"></label>
+            <div class="muted" id="target" style="margin:-6px 0 12px">寫入：${esc(loc.sheet)}</div>` : ''}
           <div id="warns"></div>
           <label class="field">備註<input id="note" placeholder="選填"></label>
           <div class="row">
@@ -243,16 +289,18 @@
         const n = Number(v);
         const warns = [];
         let usage = null;
-        if (v === '' || isNaN(n)) {
+        if (counter) {
+          $('#prevK').textContent = prevLabel;
+          $('#prevV').textContent = prev ?? '—';
           $('#usage').textContent = '—';
-        } else if (prev != null) {
-          usage = round(n - prev, loc.decimals || 0);
-          $('#usage').textContent = usage;
-          if (usage < 0) warns.push('讀數小於上期，可能辨識錯誤或電錶已歸零/更換，請再次核對。');
-          else if (avg && avg > 0 && usage > avg * 3) warns.push(`用量為平均（${round(avg, 1)}）的 ${round(usage / avg, 1)} 倍，請再次核對。`);
-        } else {
-          $('#usage').textContent = '—';
+          if (v !== '' && !isNaN(n) && prev != null) {
+            usage = round(n - prev, loc.decimals || 0);
+            $('#usage').textContent = usage;
+            if (usage < 0) warns.push('讀數小於上期，可能辨識錯誤或水錶已歸零/更換，請再次核對。');
+            else if (avg && avg > 0 && usage > avg * 3) warns.push(`用量為平均（${round(avg, 1)}）的 ${round(usage / avg, 1)} 倍，請再次核對。`);
+          }
         }
+        if (existing != null && existing !== '') warns.push(`工作表這一格已有數值 ${existing}，送出會詢問是否覆蓋。`);
         if (ocr && ocr.value && ocr.confidence < 60) warns.push('辨識信心偏低，請仔細比對照片。');
         $('#warns').innerHTML = warns.map((w) => `<div class="warn">⚠️ ${esc(w)}</div>`).join('');
         return { v, n, usage, warns };
@@ -261,15 +309,36 @@
       update();
       if (!ocr || !ocr.value) valEl.focus();
 
+      // 從工作表查上期讀數與該格現有數值
+      const refresh = async () => {
+        if (!loc.sheet || !state.settings.scriptUrl) return;
+        $('#target').textContent = `寫入：${loc.sheet}（查詢中…）`;
+        try {
+          const j = await api('lookup', { ...targetOf(loc), date: $('#date').value });
+          if (!j.ok) throw new Error(j.error);
+          $('#target').textContent = `寫入：${j.cell}`;
+          existing = j.existing;
+          if (j.prev != null) { prev = Number(j.prev); prevLabel = `上期讀數（${j.prevDate || '工作表'}）`; }
+        } catch (e) {
+          $('#target').textContent = `寫入：${loc.sheet}（⚠️ ${e.message}）`;
+        }
+        update();
+      };
+      if (loc.sheet) { $('#date').onchange = () => { existing = null; refresh(); }; refresh(); }
+
       $('#retake').onclick = back;
       $('#ok').onclick = async () => {
         const { v, n, usage, warns } = update();
         if (v === '' || isNaN(n)) return toast('請輸入正確的數字');
-        if (warns.length && !confirm(`${warns.join('\n')}\n\n確定要送出 ${v} 嗎？`)) return;
+        const soft = warns.filter((w) => !w.startsWith('工作表這一格'));
+        if (soft.length && !confirm(`${soft.join('\n')}\n\n確定要送出 ${v} 嗎？`)) return;
+        const now = new Date();
         const rec = {
           id: uid(), locationId: loc.id, locationName: loc.name, type: loc.type || '',
           meterNo: loc.meterNo || '', unit: loc.unit || '',
-          value: n, prev, usage, time: new Date().toISOString(),
+          value: n, prev: counter ? prev : null, usage, time: now.toISOString(),
+          date: loc.sheet ? $('#date').value : localDate(now),
+          target: loc.sheet ? targetOf(loc) : null, overwrite: false,
           reader: state.settings.reader || '', note: $('#note').value.trim(),
           ocrValue: ocr?.value ?? '', ocrConfidence: ocr ? Math.round(ocr.confidence) : '',
           photo: state.settings.uploadPhoto && crop ? crop : null,
@@ -278,8 +347,21 @@
         state.readings.push(rec);
         persist();
         $('#ok').disabled = true;
-        const ok = await syncOne(rec);
-        toast(ok ? '✅ 已寫入試算表' : (state.settings.scriptUrl ? '⚠️ 已暫存，網路恢復後會自動補送' : '已儲存在本機（尚未設定試算表）'), 3000);
+        let res = await syncOne(rec);
+        if (res.status === 'exists') {
+          if (confirm(`${res.cell} 已有數值 ${res.existing}\n要改成 ${v} 嗎？`)) {
+            rec.overwrite = true; delete rec.conflict;
+            res = await syncOne(rec);
+          } else {
+            rec.synced = true; rec.skipped = true; rec.photo = null; delete rec.conflict;
+            persist(); updateBadge();
+            toast('未寫入工作表（保留原數值），已記錄在本機', 3000);
+            nav.stack = []; return go('home');
+          }
+        }
+        toast(res.status === 'ok' ? `✅ 已寫入 ${res.cell || '試算表'}`
+          : res.status === 'error' ? `❌ ${res.error}（已暫存，可到「紀錄」補送）`
+          : (state.settings.scriptUrl ? '⚠️ 已暫存，網路恢復後會自動補送' : '已儲存在本機（尚未設定試算表）'), 3500);
         nav.stack = []; go('home');
       };
     },
@@ -296,11 +378,11 @@
         ${rows.length ? `<div class="card"><table class="hist">
           <tr><th></th><th>時間</th><th>地點</th><th style="text-align:right">讀數</th><th style="text-align:right">用量</th></tr>
           ${rows.map((r) => `<tr>
-            <td><span class="dot ${r.synced ? '' : 'pending'}" title="${r.synced ? '已同步' : '未同步'}"></span></td>
-            <td>${fmtTime(r.time)}</td><td>${esc(r.locationName)}</td>
+            <td><span class="dot ${r.skipped ? 'skip' : r.synced ? '' : r.conflict || r.error ? 'error' : 'pending'}" title="${esc(r.skipped ? '未寫入（保留原值）' : r.synced ? r.cell || '已同步' : r.conflict ? '工作表已有數值' : r.error || '未同步')}"></span></td>
+            <td>${fmtTime(r.time)}</td><td>${esc(r.locationName)}${r.error ? `<div class="muted">${esc(r.error)}</div>` : r.conflict ? `<div class="muted">${esc(r.conflict.cell)} 已有 ${esc(r.conflict.existing)}</div>` : ''}</td>
             <td class="num">${esc(r.value)}</td><td class="num">${r.usage ?? '—'}</td></tr>`).join('')}
         </table></div>
-        <p class="muted">● 綠色＝已寫入試算表　● 黃色＝尚未同步</p>` : '<div class="empty">尚無紀錄</div>'}`;
+        <p class="muted"><span class="dot"></span> 已寫入試算表　<span class="dot pending"></span> 尚未同步　<span class="dot error"></span> 需處理（點「補送」）　<span class="dot skip"></span> 保留工作表原值</p>` : '<div class="empty">尚無紀錄</div>'}`;
       $('#csv').onclick = exportCsv;
       $('#sync').onclick = async () => { await syncAll(true); go('history', null, false); };
     },
@@ -313,6 +395,7 @@
           <h2>Google 試算表連線</h2>
           <label class="field">Apps Script 網址<input id="s_url" value="${esc(s.scriptUrl)}" placeholder="https://script.google.com/macros/s/…/exec"></label>
           <label class="field">密鑰（需與 Apps Script 中的 SECRET 相同）<input id="s_secret" value="${esc(s.secret)}"></label>
+          <label class="field">試算表網址（每月換新檔時更新這裡；留空＝Apps Script 所在的試算表）<input id="s_sheet" value="${esc(s.sheetUrl)}" placeholder="https://docs.google.com/spreadsheets/d/…"></label>
           <label class="check"><input type="checkbox" id="s_photo" ${s.uploadPhoto ? 'checked' : ''}> 同時上傳照片到 Google 雲端硬碟</label>
           <div class="row">
             <button class="btn secondary" id="test">測試連線</button>
@@ -326,6 +409,8 @@
         <div class="card">
           <h2>資料備份</h2>
           <p class="muted">將地點清單匯出成檔案，可在其他手機匯入使用。</p>
+          <button class="btn secondary" id="preset">載入工務處抄表點（${PRESETS.length} 個，已存在的不重複加入）</button>
+          <div class="spacer"></div>
           <div class="row">
             <button class="btn secondary" id="exp">匯出地點</button>
             <label class="btn secondary">匯入地點<input type="file" accept="application/json,.json" id="imp" hidden></label>
@@ -334,6 +419,7 @@
       const collect = () => {
         s.scriptUrl = $('#s_url').value.trim();
         s.secret = $('#s_secret').value.trim();
+        s.sheetUrl = $('#s_sheet').value.trim();
         s.reader = $('#s_reader').value.trim();
         s.uploadPhoto = $('#s_photo').checked;
       };
@@ -342,11 +428,13 @@
         collect();
         if (!s.scriptUrl) return toast('請先填寫 Apps Script 網址');
         try {
-          const res = await fetch(`${s.scriptUrl}?action=ping&secret=${encodeURIComponent(s.secret)}`);
-          const j = await res.json();
-          toast(j.ok ? `✅ 連線成功：${j.spreadsheet || ''}` : `❌ ${j.error || '失敗'}`, 4000);
+          const j = await api('ping');
+          if (!j.ok) return toast(`❌ ${j.error || '失敗'}`, 4000);
+          const missing = [...new Set(state.locations.map((l) => l.sheet).filter(Boolean))].filter((n) => !j.sheets.includes(n));
+          toast(missing.length ? `⚠️ 已連線「${j.spreadsheet}」，但找不到工作表：${missing.join('、')}` : `✅ 連線成功：${j.spreadsheet}`, 6000);
         } catch (e) { toast('❌ 無法連線：' + e.message, 4000); }
       };
+      $('#preset').onclick = () => { const n = loadPresets(); toast(`已加入 ${n} 個抄表點`); };
       $('#exp').onclick = () => download('抄表地點.json', JSON.stringify(state.locations, null, 2), 'application/json');
       $('#imp').onchange = async (e) => {
         const f = e.target.files[0]; if (!f) return;
@@ -513,40 +601,80 @@
   }
 
   // ---------- 同步到 Google 試算表 ----------
-  let syncing = false;
-  async function post(rec) {
-    const { photo, synced, ...payload } = rec;
-    const body = { action: 'append', secret: state.settings.secret, record: payload };
-    if (photo) body.photo = photo;
-    // 使用 text/plain 避免 CORS 預檢（Apps Script 不支援 OPTIONS）
-    const res = await fetch(state.settings.scriptUrl, {
-      method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body),
-    });
-    const j = await res.json();
-    if (!j.ok) throw new Error(j.error || '寫入失敗');
+  // 從試算表網址取出 ID；留空則由 Apps Script 使用它所綁定的試算表
+  const sheetId = () => {
+    const u = state.settings.sheetUrl || '';
+    const m = u.match(/\/d\/([a-zA-Z0-9_-]{20,})/);
+    return m ? m[1] : u.trim();
+  };
+  const targetOf = (loc) => ({
+    sheet: loc.sheet, dateCol: loc.dateCol || 'A', valueCol: loc.valueCol,
+    signCol: loc.signCol || '', noteCol: loc.noteCol || '', rowOffset: loc.rowOffset || 0,
+  });
+  async function api(action, params = {}, body = null) {
+    const s = state.settings;
+    if (!s.scriptUrl) throw new Error('尚未設定 Apps Script 網址');
+    let res;
+    if (body) {
+      // 使用 text/plain 避免 CORS 預檢（Apps Script 不支援 OPTIONS）
+      res = await fetch(s.scriptUrl, {
+        method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action, secret: s.secret, sheetId: sheetId(), ...body }),
+      });
+    } else {
+      const q = new URLSearchParams({ action, secret: s.secret, sheetId: sheetId(), ...params });
+      res = await fetch(`${s.scriptUrl}?${q}`);
+    }
+    return res.json();
   }
+
+  let syncing = false;
+  // 回傳 { status: 'ok' | 'exists' | 'error' | 'offline', ... }
   async function syncOne(rec) {
-    if (!state.settings.scriptUrl) { updateBadge(); return false; }
+    if (!state.settings.scriptUrl) { updateBadge(); return { status: 'offline' }; }
+    const { photo, synced, conflict, skipped, ...record } = rec;
+    let j;
     try {
-      await post(rec);
-      rec.synced = true; rec.photo = null;
-      persist(); updateBadge();
-      return true;
+      j = await api('write', {}, { record, photo: photo || undefined });
     } catch (e) {
       console.warn('sync failed', e);
       updateBadge();
-      return false;
+      return { status: 'offline' };
     }
+    if (j.ok) {
+      rec.synced = true; rec.photo = null; rec.cell = j.cell || '';
+      delete rec.conflict; delete rec.error;
+      persist(); updateBadge();
+      return { status: 'ok', cell: j.cell };
+    }
+    if (j.code === 'exists') {
+      rec.conflict = { cell: j.cell, existing: j.existing };
+      persist(); updateBadge();
+      return { status: 'exists', cell: j.cell, existing: j.existing };
+    }
+    rec.error = j.error || '寫入失敗';
+    persist(); updateBadge();
+    return { status: 'error', error: rec.error };
   }
-  async function syncAll(verbose = false) {
-    if (syncing || !state.settings.scriptUrl) { if (verbose && !state.settings.scriptUrl) toast('請先到「設定」填寫 Apps Script 網址'); return; }
+  async function syncAll(manual = false) {
+    if (syncing || !state.settings.scriptUrl) { if (manual && !state.settings.scriptUrl) toast('請先到「設定」填寫 Apps Script 網址'); return; }
     syncing = true;
     let ok = 0, fail = 0;
     for (const r of state.readings.filter((x) => !x.synced)) {
-      if (await syncOne(r)) ok++; else fail++;
+      // 有衝突的紀錄只在手動補送時詢問，避免自動覆蓋別人填的數值
+      if (r.conflict) {
+        if (!manual) { fail++; continue; }
+        if (!confirm(`${r.locationName}（${r.date}）\n${r.conflict.cell} 已有數值 ${r.conflict.existing}\n要改成 ${r.value} 嗎？\n\n按「取消」保留工作表原數值`)) {
+          r.synced = true; r.skipped = true; r.photo = null; delete r.conflict; persist(); continue;
+        }
+        r.overwrite = true;
+      }
+      const res = await syncOne(r);
+      if (res.status === 'ok') ok++; else fail++;
     }
     syncing = false;
-    if (verbose || ok) toast(fail ? `補送成功 ${ok} 筆，失敗 ${fail} 筆` : `已補送 ${ok} 筆到試算表`);
+    updateBadge();
+    if (manual || ok) toast(fail ? `補送成功 ${ok} 筆，未完成 ${fail} 筆` : `已補送 ${ok} 筆到試算表`);
   }
   function updateBadge() {
     const n = state.readings.filter((r) => !r.synced).length;
@@ -566,11 +694,40 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
   function exportCsv() {
-    const head = ['抄表時間', '地點', '表別', '表號', '本期讀數', '上期讀數', '用量', '單位', '抄表人', '備註', 'OCR辨識值', 'OCR信心'];
+    const head = ['抄表日期', '寫入位置', '抄表時間', '地點', '表別', '表號', '本期讀數', '上期讀數', '用量', '單位', '抄表人', '備註', 'OCR辨識值', 'OCR信心'];
     const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const lines = [...state.readings].sort((a, b) => a.time.localeCompare(b.time)).map((r) =>
-      [fmtTime(r.time), r.locationName, r.type, r.meterNo, r.value, r.prev, r.usage, r.unit, r.reader, r.note, r.ocrValue, r.ocrConfidence].map(q).join(','));
+      [r.date || '', r.cell || '', fmtTime(r.time), r.locationName, r.type, r.meterNo, r.value, r.prev, r.usage, r.unit, r.reader, r.note, r.ocrValue, r.ocrConfidence].map(q).join(','));
     download(`抄表紀錄_${new Date().toISOString().slice(0, 10)}.csv`, '﻿' + [head.map(q).join(','), ...lines].join('\r\n'), 'text/csv');
+  }
+
+  // ---------- 預設抄表點（對應「工務處每日紀錄表」活頁簿） ----------
+  // 標準水錶工作表：第 6 列起每天一列，A＝日期、C＝累計度數、D＝簽名、E＝備註
+  const WATER_SHEETS = [
+    'R1F軟水-1', '5F-RO純水', '5F-雙RO純水', '空調冷卻用水(戶外)',
+    '汙廢水池水錶-1', '汙廢水池水錶-2', '汙廢水池水錶-3', '水箱水總錶',
+    '中層清潔水', '高層清潔水', '澆灌用水', '消防水池水錶', '沖刷水池水錶', '水舞用水', '熱泵用水',
+  ];
+  const PRESETS = [
+    ...WATER_SHEETS.map((sheet) => ({
+      key: 'preset:' + sheet, name: sheet, type: '水錶', unit: 'm³', decimals: 0, counter: true, daily: true,
+      sheet, dateCol: 'A', valueCol: 'C', signCol: 'D', noteCol: 'E', rowOffset: 0,
+    })),
+    // 發電機油箱：早班 A/B/C 欄、中班 E/F/G 欄，油量會下降所以不是累計型
+    { key: 'preset:發電機油箱-早', name: '發電機油箱（早班）', type: '油量', unit: 'L', decimals: 0, counter: false, daily: true,
+      sheet: '發電機油箱', dateCol: 'A', valueCol: 'B', signCol: 'C', noteCol: '', rowOffset: 0 },
+    { key: 'preset:發電機油箱-中', name: '發電機油箱（中班）', type: '油量', unit: 'L', decimals: 0, counter: false, daily: true,
+      sheet: '發電機油箱', dateCol: 'E', valueCol: 'F', signCol: 'G', noteCol: '', rowOffset: 0 },
+  ];
+  function loadPresets() {
+    let n = 0;
+    for (const p of PRESETS) {
+      if (state.locations.some((l) => l.key === p.key || (l.sheet === p.sheet && l.valueCol === p.valueCol))) continue;
+      state.locations.push({ ...p, id: uid(), meterNo: '', initial: '', note: '' });
+      n++;
+    }
+    persist();
+    return n;
   }
 
   // ---------- 啟動 ----------
