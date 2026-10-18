@@ -9,6 +9,7 @@
 //   1. 上面的統一格式（自己寫的腳本、bridge/server.js 轉發）
 //   2. DouyinBarrageGrab 等抓取工具：{ Type: 1~8, Data: {...} }
 //   3. 抖音直播開放平台推送：{ msg_type / type: 'live_comment' | 'live_gift' | 'live_like', payload: [...] }
+//   4. TikTok（tiktok-live-connector 格式）：{ event: 'chat' | 'gift' | 'like' | ..., data: {...} }，見 tiktok.js
 (function () {
   const DG = (window.DG = window.DG || {});
 
@@ -125,6 +126,11 @@
     if (Array.isArray(m)) return m.flatMap((x) => DG.normalize(x));
     if (m.Type !== undefined && (m.Data !== undefined || m.data !== undefined)) {
       const e = normalizeBarrageGrab(m);
+      return e ? [e] : [];
+    }
+    // TikTok：{ event: 'gift', data: {...} }
+    if (typeof m.event === 'string' && m.data && typeof m.data === 'object' && DG.tiktok) {
+      const e = DG.tiktok.normalize(m.event, m.data);
       return e ? [e] : [];
     }
     const kind = String(m.msg_type || m.type || '');

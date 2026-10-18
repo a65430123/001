@@ -1,10 +1,13 @@
 {
-  "name": "douyin-live-siege",
+  "name": "live-siege-game",
   "version": "1.0.0",
   "private": true,
-  "description": "抖音直播彈幕互動遊戲：彈幕攻城戰",
+  "description": "TikTok／抖音直播彈幕互動遊戲：彈幕攻城戰",
   "scripts": {
     "start": "node bridge/server.js"
   },
-  "engines": { "node": ">=18" }
+  "dependencies": {
+    "tiktok-live-connector": "^2.5.0"
+  },
+  "engines": { "node": ">=20" }
 }

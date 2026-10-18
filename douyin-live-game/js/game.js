@@ -25,9 +25,7 @@
   function findGift(gift) {
     if (gift.id && giftIndex.has('id:' + gift.id)) return giftIndex.get('id:' + gift.id);
     const n = String(gift.name || '').trim().toLowerCase();
-    if (giftIndex.has(n)) return giftIndex.get(n);
-    for (const [k, g] of giftIndex) if (n && !k.startsWith('id:') && (n.includes(k) || k.includes(n))) return g;
-    return null;
+    return giftIndex.get(n) || null;
   }
 
   const kw = {};
@@ -214,7 +212,7 @@
         case 'follow':
           this.autoTeam(p);
           this.applyEffects(p.team, p, C.followEffects, 1);
-          this.announce({ text: `${short(p.name)} 關注了主播`, sub: '獲得騎士一名', team: p.team, tier: 1, icon: '⭐', avatar: p.avatar });
+          this.announce({ text: `${short(p.name)} 追蹤了主播`, sub: '獲得騎士一名', team: p.team, tier: 1, icon: '⭐', avatar: p.avatar });
           return;
         case 'share':
           this.autoTeam(p);
@@ -1405,7 +1403,7 @@
         ['加入紅隊', C.teams.red.color],
         ['　評論 2 ', '#fff'],
         ['加入藍隊', C.teams.blue.color],
-        ['　666 衝鋒　點讚出兵', '#ffd23f'],
+        ['　666 衝鋒　按讚出兵', '#ffd23f'],
       ];
       let total = 0;
       for (const [t] of pieces) total += ctx.measureText(t).width;

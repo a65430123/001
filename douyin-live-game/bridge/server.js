@@ -4,9 +4,10 @@
 //   - WebSocket 廣播：ws://localhost:3000/ws（遊戲會自動連上）
 //   - HTTP 推送：POST http://localhost:3000/event  （JSON，單筆或陣列）
 //       可接抖音直播開放平台的推送、或任何你自己的抓取腳本
+//   - TikTok 直連：--tiktok 你的帳號  直接讀取 TikTok 直播間的留言、禮物、按讚（需先 npm install）
 //   - 上游轉接：--upstream ws://127.0.0.1:8888  把其他彈幕工具的訊息轉發給遊戲
 //
-// 用法：node bridge/server.js [--port 3000] [--upstream ws://...] [--token 密碼]
+// 用法：node bridge/server.js [--port 3000] [--tiktok 帳號] [--upstream ws://...] [--token 密碼]
 'use strict';
 const http = require('http');
 const fs = require('fs');
@@ -21,6 +22,8 @@ const opt = (name, def) => {
 const PORT = Number(opt('port', 3000));
 const UPSTREAM = opt('upstream', '');
 const TOKEN = opt('token', ''); // 設定後 POST /event 需帶 ?token= 或 X-Token 標頭
+const TIKTOK = String(opt('tiktok', '')).replace(/^@/, '');
+const SIGN_KEY = opt('sign-key', ''); // Euler Stream API key（選填，可提高連線次數上限）
 const ROOT = path.resolve(__dirname, '..');
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml' };
@@ -160,9 +163,70 @@ function connectUpstream() {
   ws.onerror = () => {};
 }
 
+// ── TikTok 直連 ──
+async function connectTikTok() {
+  let lib;
+  try {
+    lib = await import('tiktok-live-connector');
+  } catch (e) {
+    console.error('[tiktok] 找不到 tiktok-live-connector，請先在 douyin-live-game 資料夾執行：npm install');
+    return;
+  }
+  const tiktok = require('../js/tiktok.js');
+  const { TikTokLiveConnection, WebcastEvent, ControlEvent } = lib;
+  let retryTimer = null;
+  let conn = null;
+  const retry = (sec) => {
+    if (retryTimer) return;
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      start();
+    }, sec * 1000);
+  };
+  const start = async () => {
+    conn = new TikTokLiveConnection(TIKTOK, { enableExtendedGiftInfo: true, ...(SIGN_KEY ? { signApiKey: SIGN_KEY } : {}) });
+    for (const name of ['chat', 'gift', 'like', 'follow', 'share', 'member']) {
+      conn.on(WebcastEvent[name.toUpperCase()] || name, (data) => {
+        let ev = null;
+        try {
+          ev = tiktok.normalize(name, data);
+        } catch (e) {
+          console.warn('[tiktok] 無法解析', name, e.message);
+        }
+        if (!ev) return;
+        if (ev.type === 'gift') console.log(`[tiktok] 🎁 ${ev.user.name} 送出 ${ev.gift.name} ×${ev.gift.count}`);
+        broadcast(JSON.stringify(ev));
+      });
+    }
+    conn.on((WebcastEvent && WebcastEvent.STREAM_END) || 'streamEnd', () => {
+      console.log('[tiktok] 直播已結束，30 秒後重新嘗試連線');
+      retry(30);
+    });
+    conn.on((ControlEvent && ControlEvent.DISCONNECTED) || 'disconnected', () => {
+      console.log('[tiktok] 連線中斷，10 秒後重連');
+      retry(10);
+    });
+    conn.on((ControlEvent && ControlEvent.ERROR) || 'error', () => {});
+    try {
+      const state = await conn.connect();
+      console.log(`[tiktok] ✅ 已連上 @${TIKTOK} 的直播間（roomId ${state && state.roomId}）`);
+    } catch (e) {
+      const msg = String((e && e.message) || e);
+      if (/offline|not.*live|LIVE has ended|isn't online/i.test(msg) || (e && e.constructor && e.constructor.name === 'UserOfflineError')) {
+        console.log(`[tiktok] @${TIKTOK} 目前沒有在直播，20 秒後再試（開播後會自動連上）`);
+      } else {
+        console.log('[tiktok] 連線失敗：' + msg + '（常見原因：還沒開播、帳號打錯、網路被擋），20 秒後再試');
+      }
+      retry(20);
+    }
+  };
+  start();
+}
+
 server.listen(PORT, () => {
   console.log(`[bridge] 遊戲網址： http://localhost:${PORT}`);
   console.log(`[bridge] 模擬模式： http://localhost:${PORT}/?sim=1`);
   console.log(`[bridge] 推送事件： POST http://localhost:${PORT}/event`);
   connectUpstream();
+  if (TIKTOK) connectTikTok();
 });

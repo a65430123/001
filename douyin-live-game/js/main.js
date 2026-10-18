@@ -2,6 +2,7 @@
 //
 // 網址參數：
 //   ?ws=ws://127.0.0.1:8888   連到彈幕工具的 WebSocket（可多個，用逗號分隔）
+//   ?platform=douyin          改用抖音禮物表（預設 TikTok）
 //   ?sim=1                    開啟模擬控制台
 //   ?demo=60                  60 秒沒人互動就自動播放暖場示範
 //   ?round=300                每局秒數
@@ -56,6 +57,8 @@
 
   // ── 音效解鎖 ──
   const unlockEl = document.getElementById('unlock');
+  // 提示只在測試時顯示，避免出現在直播畫面上
+  if (params.get('sim') !== '1') unlockEl.classList.add('hide');
   const unlock = () => {
     DG.Audio.unlock();
     unlockEl.classList.add('hide');
