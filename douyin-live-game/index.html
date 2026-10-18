@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>彈幕攻城戰</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="stage"><canvas id="game"></canvas></div>
+
+  <div id="status" title="直播連線狀態"></div>
+
+  <!-- 模擬控制台：按 S 鍵或網址加 ?sim=1 開啟 -->
+  <aside id="sim" hidden>
+    <header>
+      <b>🎮 模擬控制台</b>
+      <span class="hint">S 鍵開關</span>
+    </header>
+    <label>觀眾 <input id="simName" value="測試觀眾" /></label>
+    <div class="row">
+      <button data-chat="1" class="red">評論 1</button>
+      <button data-chat="2" class="blue">評論 2</button>
+      <button data-chat="666">評論 666</button>
+      <button id="simLike">點讚 ×20</button>
+      <button id="simFollow">關注</button>
+      <button id="simShare">分享</button>
+    </div>
+    <label>禮物數量 <input id="simCount" type="number" min="1" max="999" value="1" /></label>
+    <div class="row" id="simGifts"></div>
+    <div class="row">
+      <button id="simBots">🤖 自動模擬：關</button>
+      <button id="simMute">🔊 音效：開</button>
+      <button id="simReset">重開一局</button>
+    </div>
+    <p class="hint">每次點「觀眾」欄會換一個隨機名字；按住 Shift 點禮物 = 隨機觀眾送出。</p>
+  </aside>
+
+  <div id="unlock">點一下畫面啟用音效</div>
+
+  <script src="js/config.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/connector.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
