@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 cd /d "%~dp0"
-title 彈幕攻城戰 - TikTok
+title 彈幕攻城戰 - TikTok 直連模式（不用 TikFinity）
 
 where node >nul 2>nul
 if errorlevel 1 (
@@ -25,7 +25,7 @@ set "TT=%TT:@=%"
 
 echo.
 echo  遊戲網址（貼到 TikTok LIVE Studio 的「連結」來源）：
-echo     http://localhost:3000/
+echo     http://localhost:3000/?source=bridge
 echo  想先測試：用瀏覽器打開 http://localhost:3000/?sim=1
 echo  要換帳號：刪掉 tiktok-account.txt 再重開
 echo  開播後會自動連上直播間；這個視窗直播期間請不要關。

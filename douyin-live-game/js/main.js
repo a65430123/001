@@ -1,7 +1,10 @@
 // 進入點：建立遊戲、連線直播事件來源、模擬控制台。
 //
 // 網址參數：
-//   ?ws=ws://127.0.0.1:8888   連到彈幕工具的 WebSocket（可多個，用逗號分隔）
+//   （預設）                   連 TikFinity 桌面版 ws://localhost:21213/
+//   ?tikfinity=ws://localhost:21213/  TikFinity 改過連接埠時使用
+//   ?source=bridge            改連 bridge/server.js --tiktok（不用 TikFinity 的直連模式）
+//   ?ws=ws://127.0.0.1:8888   連到其他彈幕工具的 WebSocket（可多個，用逗號分隔）
 //   ?platform=douyin          改用抖音禮物表（預設 TikTok）
 //   ?sim=1                    開啟模擬控制台
 //   ?demo=60                  60 秒沒人互動就自動播放暖場示範
@@ -18,33 +21,35 @@
   DG.Audio.setMuted(params.get('mute') === '1');
 
   // ── 直播連線 ──
+  // 預設連 TikFinity 桌面版的 WebSocket；?source=bridge 改連 bridge/server.js（TikTok 直連）；?ws= 自訂
+  const sources = [];
+  const sameOrigin = () => (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+  if (params.get('ws')) {
+    params.get('ws').split(',').map((s) => s.trim()).filter(Boolean).forEach((url) => sources.push({ label: '直播', url }));
+  } else if (params.get('source') === 'bridge' && location.protocol.startsWith('http')) {
+    sources.push({ label: 'TikTok 直連', url: sameOrigin() });
+  } else if (params.get('source') !== 'none') {
+    sources.push({ label: 'TikFinity', url: params.get('tikfinity') || 'ws://localhost:21213/' });
+  }
+
   const statusEl = document.getElementById('status');
-  const statuses = new Map();
   function renderStatus() {
-    const vals = [...statuses.values()];
-    if (!vals.length) {
-      statusEl.textContent = '';
-      return;
-    }
-    const open = vals.filter((v) => v === 'open').length;
-    statusEl.className = open ? 'open' : 'bad';
-    statusEl.textContent = open ? `● 直播已連線 ${open}/${vals.length}` : '○ 直播未連線，重試中…';
+    const down = sources.filter((s) => s.state !== 'open');
+    statusEl.className = down.length ? 'bad' : 'open';
+    statusEl.textContent = down.length
+      ? `○ 等待 ${down.map((s) => s.label).join('、')} 連線…` + (down.some((s) => s.label === 'TikFinity') ? '（請開啟 TikFinity 桌面版）' : '')
+      : `● ${sources.map((s) => s.label).join('、')} 已連線`;
     // 連線正常幾秒後自動淡出，不擋直播畫面
     clearTimeout(renderStatus.t);
     statusEl.classList.remove('fade');
-    if (open === vals.length) renderStatus.t = setTimeout(() => statusEl.classList.add('fade'), 4000);
+    if (!down.length) renderStatus.t = setTimeout(() => statusEl.classList.add('fade'), 4000);
   }
-  let urls = (params.get('ws') || '').split(',').map((s) => s.trim()).filter(Boolean);
-  if (!urls.length && location.protocol.startsWith('http')) {
-    // 由 bridge/server.js 提供網頁時，自動連到同一台的 /ws
-    urls = [(location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws'];
-  }
-  for (const url of urls) {
+  for (const src of sources) {
     new DG.Connector(
-      url,
+      src.url,
       (ev) => game.handleEvent(ev),
       (state) => {
-        statuses.set(url, state);
+        src.state = state;
         renderStatus();
       }
     );

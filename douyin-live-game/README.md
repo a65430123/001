@@ -3,24 +3,29 @@
 紅藍兩隊攻城對戰。觀眾在直播間**留言選邊、按讚出兵、送禮物召喚兵種與技能**，先攻破對方城堡的一隊獲勝。
 
 - 直立 1080×1920 畫面，放進 **TikTok LIVE Studio** 的「連結（Link）」來源即可（OBS 也可以）
-- 直接讀取你 TikTok 直播間的留言、禮物、按讚、追蹤、分享
+- 透過 **TikFinity** 讀取你直播間的留言、禮物、按讚、追蹤、分享（TikFinity 原本的音效、TTS、其他小工具可以照常一起用）
 - 每個禮物都有不同效果，大禮物有全螢幕特效、橫幅、震動、音效
 - 本局戰神榜、MVP、比分累計，每局自動重開
 - 預設使用 TikTok 禮物表；抖音請在網址加 `?platform=douyin`
 
 ---
 
-## 一、第一次設定（Windows，約 5 分鐘）
+## 架構
 
-1. 安裝 **Node.js**：到 <https://nodejs.org> 下載 **LTS** 版本，一路「下一步」裝好。
-2. 下載這個專案，進到 `douyin-live-game` 資料夾。
-3. 雙擊 **`開始-TikTok直播.bat`**
-   - 第一次會自動安裝需要的套件（要等一下）
-   - 輸入你的 TikTok 帳號（`@` 後面那串，例如 `abc123`），之後會記住
-   - 看到 `遊戲網址： http://localhost:3000` 就是啟動成功，**直播期間不要關這個黑色視窗**
-4. 先用瀏覽器打開 <http://localhost:3000/?sim=1> 試玩：右側有模擬控制台，可以點按鈕模擬留言、送禮；按「🤖 自動模擬」會有 30 位假觀眾一起玩。
+```
+TikTok 直播間 ──► TikFinity 桌面版 ──(ws://localhost:21213)──► 遊戲畫面 ──► TikTok LIVE Studio「連結」來源
+```
 
-> Mac／Linux：在資料夾內執行 `npm install`，再執行 `node bridge/server.js --tiktok 你的帳號`。
+遊戲直接連 TikFinity 桌面版內建的 WebSocket，不用申請任何 API、不用輸入帳號密碼。
+
+## 一、第一次設定（Windows）
+
+1. 安裝並開啟 **TikFinity 桌面版**（Windows 版，網頁版不行），登入後在 TikFinity 裡**連上你的 TikTok 帳號**。
+2. 下載這個專案，進到 `douyin-live-game` 資料夾，雙擊 **`開始-TikFinity直播.bat`**
+   - 不用安裝任何東西：有 Node.js 就用 Node.js，沒有就用 Windows 內建的 PowerShell
+   - 出現 `遊戲網址： http://localhost:3000/` 就是啟動成功，**直播期間不要關這個黑色視窗**
+   - 若 Windows 跳出防火牆詢問，選「允許」（只在本機使用）
+3. 先用瀏覽器打開 <http://localhost:3000/?sim=1> 試玩：右側有模擬控制台，可以點按鈕模擬留言、送禮；按「🤖 自動模擬」會有 30 位假觀眾一起玩。
 
 ## 二、放進 TikTok LIVE Studio
 
@@ -28,17 +33,23 @@
 2. 在場景的「來源」按 **＋ 新增來源 → 連結（Link）**。
 3. 網址填 `http://localhost:3000/`，解析度填 **寬 1080、高 1920**。
 4. 把來源拉滿整個畫面（或你想要的區域），按預覽確認。
-5. **開播**。黑色視窗出現 `✅ 已連上 @你的帳號 的直播間` 就代表開始接收觀眾互動了。
-   還沒開播時會顯示「目前沒有在直播，20 秒後再試」，這是正常的，開播後會自動連上。
+5. **開播**，然後確認 TikFinity 顯示已連上直播間。
+6. 畫面左下角會短暫顯示 `● TikFinity 已連線`（4 秒後自動隱藏）。若一直顯示「等待 TikFinity 連線」，代表 TikFinity 桌面版沒開。
+
+> 建議開播後先用小帳號送一朵玫瑰，確認遊戲有反應。
 
 **常見狀況**
 
 | 狀況 | 解法 |
 |---|---|
+| 一直顯示「等待 TikFinity 連線」 | 確認 TikFinity **桌面版**有開啟（不是網頁版）。若在 TikFinity 改過 WebSocket 連接埠，網址加 `?tikfinity=ws://localhost:你的埠號/` |
+| 顯示已連線，但送禮沒反應 | TikFinity 開著不代表已接上直播：確認 TikFinity 裡已連上你的直播間，而且已經開播 |
 | 來源變成一個很小的方框、拉不大 | TikTok LIVE Studio 的已知問題（網頁來源有時以 0×0 載入）。刪掉來源重新新增；仍不行就改用 OBS 開遊戲，再用 OBS 虛擬攝影機當 LIVE Studio 的攝影機來源 |
 | 畫面卡住不動 | LIVE Studio 的連結來源沒有重新整理按鈕：把網址改成 `http://localhost:3000/?r=2`（數字每次換一個）就會重新載入 |
-| 沒有聲音 | 部分版本的連結來源不會播放網頁聲音，可在遊戲網址加 `?mute=1` 關掉音效，改用自己的背景音樂 |
-| 一直顯示連線失敗 | 確認帳號拼字、確認已經開播；公司／學校網路可能擋 TikTok，換網路試試 |
+| 沒有聲音 | 部分版本的連結來源不會播放網頁聲音，可在遊戲網址加 `?mute=1` 關掉音效，改用 TikFinity 的音效提醒 |
+| 黑色視窗說連接埠被使用 | 已經開過一次了，關掉舊的視窗再開；或其他程式占用 3000 埠 |
+
+> **小提醒**：TikFinity 的「留言關鍵字觸發」等功能如果也設定了 `1`、`2`、`666`，會和遊戲同時觸發，記得避開。
 
 ## 三、玩法（可以把這段貼在直播簡介）
 
@@ -86,23 +97,27 @@
 | `?round=180` | 每局秒數 |
 | `?mute=1` | 靜音 |
 | `?platform=douyin` | 改用抖音禮物表 |
+| `?tikfinity=ws://localhost:21213/` | TikFinity 的 WebSocket 位址（預設就是這個，改過埠號才需要） |
+| `?source=bridge` | 不用 TikFinity，改用內建的 TikTok 直連（見下方） |
 | `?ws=ws://…` | 改連其他工具的 WebSocket（多個用逗號分隔） |
 
 多個參數用 `&` 連接，例如 `http://localhost:3000/?demo=60&round=240`。
 
-## 五、運作方式與注意事項
+## 五、不用 TikFinity 的直連模式（備用）
 
-```
-TikTok 直播間 ──► bridge/server.js（你的電腦，tiktok-live-connector）──► 遊戲畫面（LIVE Studio 連結來源）
-```
+如果 TikFinity 暫時不能用，也可以讓遊戲自己連 TikTok：
 
-- 讀取直播間使用開源套件 [tiktok-live-connector](https://github.com/zerodytrash/TikTok-Live-Connector)，它**不是 TikTok 官方 API**，TikTok 改版時可能暫時失效，屆時在資料夾執行 `npm update` 更新套件即可。
-- 該套件透過 Euler Stream 簽章服務連線，免費額度一般直播足夠；若出現頻率限制錯誤，可到 Euler Stream 申請 API key，啟動時加 `--sign-key 你的key`。
-- 遊戲只「讀取」直播間事件，不會用你的帳號發言或操作。
+1. 安裝 **Node.js**（<https://nodejs.org>，LTS 版本）。
+2. 雙擊 **`進階-不用TikFinity直連.bat`**，輸入你的 TikTok 帳號（`@` 後面那串）。第一次會自動安裝套件。
+3. LIVE Studio 的連結來源網址改成 `http://localhost:3000/?source=bridge`。
+
+- 直連模式使用開源套件 [tiktok-live-connector](https://github.com/zerodytrash/TikTok-Live-Connector)，**不是 TikTok 官方 API**，TikTok 改版時可能暫時失效，屆時在資料夾執行 `npm update` 更新套件。
+- 該套件透過 Euler Stream 簽章服務連線，免費額度一般直播足夠；若出現頻率限制錯誤，可申請 API key，啟動時加 `--sign-key 你的key`。
+- 兩種模式都只「讀取」直播間事件，不會用你的帳號發言或操作。
 
 **其他接入方式**
 
-- 任何工具只要送出 tiktok-live-connector 格式的 `{ "event": "gift", "data": { … } }`，或下面的通用格式，都可以透過 `ws://localhost:3000/ws` 或 `POST http://localhost:3000/event` 送進遊戲：
+- 用 Node.js 版伺服器（`node bridge/server.js`）並以 `?source=bridge` 開啟遊戲時，任何工具只要送出 TikFinity／tiktok-live-connector 格式的 `{ "event": "gift", "data": { … } }`，或下面的通用格式，都可以透過 `ws://localhost:3000/ws` 或 `POST http://localhost:3000/event` 送進遊戲：
 
 ```json
 { "type": "chat",   "user": { "id": "123", "name": "小明" }, "text": "1" }
@@ -121,14 +136,16 @@ curl -X POST localhost:3000/event -d '{"type":"gift","user":{"name":"土豪"},"g
 
 ```
 douyin-live-game/
-├── 開始-TikTok直播.bat   ★ Windows 一鍵啟動
+├── 開始-TikFinity直播.bat  ★ Windows 一鍵啟動（搭配 TikFinity）
+├── 進階-不用TikFinity直連.bat  備用：不用 TikFinity，直接連 TikTok
+├── tools/serve.ps1       沒有 Node.js 時用的 PowerShell 網頁伺服器
 ├── index.html            頁面與模擬控制台
 ├── js/config.js          ★ 禮物效果、兵種數值、關鍵字（改這裡）
 ├── js/game.js            遊戲引擎：戰鬥、特效、繪圖
-├── js/tiktok.js          TikTok 事件轉換（連擊禮物去重）
+├── js/tiktok.js          TikFinity／TikTok 事件轉換（連擊禮物去重）
 ├── js/connector.js       各平台事件格式轉換與 WebSocket 連線
 ├── js/audio.js           即時合成音效
 ├── js/main.js            進入點、模擬控制台、自動模擬
 ├── css/style.css
-└── bridge/server.js      本機伺服器：提供網頁、/ws 廣播、POST /event、TikTok 直連
+└── bridge/server.js      Node.js 本機伺服器：提供網頁、/ws 廣播、POST /event、TikTok 直連
 ```

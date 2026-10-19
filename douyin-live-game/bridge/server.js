@@ -117,7 +117,7 @@ const server = http.createServer((req, res) => {
     return;
   }
   let file = path.normalize(path.join(ROOT, decodeURIComponent(url.pathname)));
-  if (!(file + path.sep).startsWith(ROOT + path.sep) || file.includes(path.sep + 'bridge' + path.sep)) {
+  if (!(file + path.sep).startsWith(ROOT + path.sep) || /[\\/](bridge|tools|node_modules)[\\/]/.test(file.slice(ROOT.length))) {
     res.writeHead(403).end();
     return;
   }
@@ -224,7 +224,8 @@ async function connectTikTok() {
 }
 
 server.listen(PORT, () => {
-  console.log(`[bridge] 遊戲網址： http://localhost:${PORT}`);
+  const q = TIKTOK ? '?source=bridge' : '';
+  console.log(`[bridge] 遊戲網址： http://localhost:${PORT}/${q}`);
   console.log(`[bridge] 模擬模式： http://localhost:${PORT}/?sim=1`);
   console.log(`[bridge] 推送事件： POST http://localhost:${PORT}/event`);
   connectUpstream();

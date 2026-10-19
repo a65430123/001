@@ -268,8 +268,22 @@
       p.diamonds += value;
       p.score += value * 2;
       this.applyEffects(team, p, def.effects, count);
+      // 有對應到設定時顯示設定裡的中文名稱（TikTok 傳來的多半是英文）
+      const giftName = def.names ? def.names[0] : gift.name || '禮物';
+      // 連送同一個禮物時，合併成同一條橫幅並累加數量
+      const key = p.id + '|' + giftName;
+      const same = [this.banner, ...this.banners].find((b) => b && b.key === key);
+      if (same) {
+        same.count += count;
+        same.text = `${short(p.name, 10)} 送出 ${giftName} ×${same.count}`;
+        if (same === this.banner) same.t = Math.min(same.t, 0.3);
+        A.gift(def.tier || 1);
+        return;
+      }
       this.announce({
-        text: `${short(p.name, 10)} 送出 ${gift.name || '禮物'} ×${count}`,
+        key,
+        count,
+        text: `${short(p.name, 10)} 送出 ${giftName} ×${count}`,
         sub: def.desc,
         team,
         tier: def.tier || 1,
